@@ -1,0 +1,821 @@
+---
+title: "Random_Forest_Cute03"
+author: "Abhishek_Shetty"
+date: "August 23, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+rm(list = ls(all.names = TRUE))
+
+```
+
+```{r}
+
+library(DMwR)
+library(caret)
+library(ROCR)
+library(car)
+```
+
+
+
+```{r}
+bank_data <- read.csv("train.csv",header = TRUE)
+
+```
+
+
+
+```{r}
+str(bank_data)
+
+#View(bank_data)
+```
+
+
+#Convert the target variable to factor
+```{r}
+bank_data$target <- as.factor(bank_data$target)
+prop.table(table(bank_data$target))
+```
+
+```{r}
+summary(bank_data)
+```
+
+```{r}
+colSums(is.na(bank_data))
+```
+
+
+
+
+```{r}
+calc_NA <- data.frame(colSums(is.na(bank_data)/nrow(bank_data))*100)
+
+calc_NA
+
+
+calc_NA2<-data.frame(rownames(calc_NA),calc_NA[,1])
+
+
+calc_NA2
+
+
+
+summary(calc_NA)
+summary(calc_NA2)
+
+
+
+
+colnames(calc_NA2)<- c("Attribute" , "percentage")
+
+calc_NA2[order(calc_NA,decreasing = TRUE),]
+
+
+```
+
+#percentage of NA values is 44% in Attr 37 
+#Attr 37 can be Knn IMputed for this value
+
+#Split data into train and test
+```{r}
+
+library(caret)
+
+set.seed(786)
+
+train_rows <- createDataPartition(bank_data$target,p=0.7,list=F)
+
+train_data <- bank_data[train_rows,]
+
+val_data <- bank_data[-train_rows,]
+
+```
+
+
+
+```{r}
+
+
+library(class)
+library(DMwR)
+
+
+val_data$ID <- NULL
+
+train_data$ID <- NULL
+
+target <- train_data$target
+val_data_target <- val_data$target
+
+val_data$target <- NULL
+train_data$target <- NULL
+
+train_Data <- centralImputation(data = train_data)
+sum(is.na(train_Data))
+val_Data <- centralImputation(data = val_data)
+sum(is.na(val_Data))
+
+
+
+
+#Combining train data imputed and target before building model
+train_Data <- data.frame(train_Data,target)
+str(train_Data)
+
+val_Data<- data.frame(val_Data , target = val_data_target)
+
+str(val_Data)
+```
+
+
+#checking corelation
+
+```{r}
+library(corrplot)
+
+corrplot(cor(train_data , use = "complete.obs") ,method = "color" )
+
+corrplot(cor(train_data , use = "complete.obs") ,method = "number")
+
+```
+
+
+
+
+```{r}
+library(randomForest)
+
+model = randomForest(target ~ ., data=train_Data, 
+                     keep.forest=TRUE, ntree=100) 
+
+# Print and understand the model
+print(model)
+
+model$importance  
+round(importance(model), 2) 
+
+
+```
+
+
+
+
+```{r}
+# Extract and store important variables obtained from the random forest model
+rf_Imp_Attr = data.frame(model$importance)
+rf_Imp_Attr = data.frame(row.names(rf_Imp_Attr),rf_Imp_Attr[,1])
+rf_Imp_Attr
+
+colnames(rf_Imp_Attr) = c('Attributes', 'Importance')
+rf_Imp_Attr = rf_Imp_Attr[order(rf_Imp_Attr$Importance, decreasing = TRUE),]
+
+
+rf_Imp_Attr
+
+```
+
+
+
+```{r}
+
+varImpPlot(model)
+
+```
+
+
+
+#Predict on train data
+```{r}
+pred_train<- predict(model, train_Data[,setdiff(names(train_Data), "target")],
+                     type = "response",
+                     norm.votes = TRUE)
+```
+
+
+
+
+#Build Confusion Matrix
+```{r}
+
+str(train_Data)
+
+cm_Train = table("actual"= train_Data$target, "predicted" = pred_train)
+cm_Train
+
+```
+
+
+
+```{r}
+accu_Train= sum(diag(cm_Train))/sum(cm_Train)
+accu_Train
+
+```
+
+
+#predict on Validation Data
+```{r}
+
+pred_val<- predict(model, val_Data[,setdiff(names(val_Data), "target")],
+                     type = "response",
+                     norm.votes = TRUE)
+```
+
+
+
+
+
+```{r}
+
+cm_Val = table("actual"= val_Data$target, "predicted" = pred_val)
+cm_Val
+
+```
+
+
+
+
+```{r}
+
+accu_Val= sum(diag(cm_Val))/sum(cm_Val)
+accu_Val
+
+```
+
+
+
+
+
+```{r}
+
+#Read in test data, remove index, add new NA row  and impute
+
+test_data <- read.csv("test.csv",header = TRUE)
+
+#index <- test_data$ID
+
+ID<- test_data$ID
+
+test_data$ID <- NULL
+
+#Add new column, numbe of NAs across each row
+
+
+#test_data$na_count <- apply(is.na(test_data), 1, sum)
+
+
+test_Data <-centralImputation(data = test_data)
+
+
+colSums(is.na(test_Data))
+
+```
+
+
+
+
+# Predicton Test Data
+```{r}
+
+pred_Test = predict(model, test_Data,
+                    type="response", 
+                    norm.votes=TRUE)
+
+```
+
+
+
+
+
+```{r}
+
+
+final_data <-cbind(ID,test_Data,pred_Test)
+
+View(final_data)
+
+```
+
+
+
+```{r}
+
+submission <- final_data[,names(final_data) %in% c("ID","pred_Test")]
+
+
+View(submission)
+
+```
+
+
+
+
+```{r}
+library(xlsx)
+
+write.csv(submission, "submission.csv")
+
+getwd()
+
+```
+
+
+
+
+
+```{r}
+
+new_sub<- read.csv("submission_01.csv", header = TRUE)
+
+
+View(new_sub)
+
+write.csv(x = new_sub , file = "submission_new.csv")
+
+```
+
+
+#Additional Trial using logistic regression
+
+```{r}
+
+str(train_Data)
+
+
+log_reg_model<- glm(target~.,data = train_Data , family = binomial)
+
+summary(log_reg_model)
+
+
+```
+
+#Attr 14 and Attr 18 showing singularity , need to be removed
+
+```{r}
+train_new_data<- train_Data[!names(train_Data)%in% c("Attr14" , "Attr18")]
+
+str(train_new_data)
+
+```
+
+
+```{r}
+
+log_reg_model<- glm(target~.,data = train_new_data , family = binomial)
+
+summary(log_reg_model)
+
+```
+
+
+
+```{r}
+library(MASS)
+library(car)
+
+model_aic <- stepAIC(log_reg_model, direction = "both")
+
+```
+
+
+```{r}
+
+summary(model_aic)
+
+```
+#For a given predictor (p), multicollinearity can assessed by computing a score called the variance inflation factor (or VIF), which measures how much the variance of a regression coefficient is inflated due to multicollinearity in the model
+
+#The smallest possible value of VIF is one (absence of multicollinearity). As a rule of thumb, a VIF value that exceeds 5 or 10 indicates a problematic amount of collinearity 
+
+
+```{r}
+
+
+vif_value <- vif(model_aic)
+
+sort(vif_value,decreasing = TRUE)
+```
+
+
+
+
+
+```{r}
+train_Data_trial<- train_Data[!names(train_Data)%in% c("Attr43","Attr44","Attr20","Attr20","Attr19","Attr49","Attr42","Attr17","Attr8","Attr4","Attr46","Attr10","Attr38","Attr16","Attr23","Attr26","Attr31","Attr53","Attr54","Attr33","Attr63","Attr12","Attr11","Attr51","Attr22","Attr3","Attr7","Attr2","Attr9","Attr48","Attr25","Attr50","Attr39","Attr34","Attr6","Attr64","Attr35","Attr32","Attr47","Attr56","Attr24","Attr30","Attr62")]
+
+
+
+str(train_Data_trial)
+
+```
+
+
+
+
+
+#For checking importance and removing Colinear Attributes
+```{r}
+library(DMwR)
+
+trial_smote <-SMOTE(target ~ ., train_Data_trial, perc.over =500, perc.under = 400)
+
+```
+
+
+
+
+
+```{r}
+table(trial_smote$target)
+
+str(trial_smote)
+
+```
+
+
+
+
+
+```{r}
+model_trial = randomForest(target ~ ., data=trial_smote, 
+                      keep.forest=TRUE, ntree=100)
+
+print(model_trial)
+```
+
+
+
+
+
+
+
+```{r}
+
+target_smot<- trial_smote$target
+
+trial_smote$target<- NULL
+
+str(trial_smote)
+
+trial_smote<- data.frame(trial_smote , target_smot)
+str(trial_smote)
+
+```
+
+
+```{r}
+
+```
+
+
+
+#Select best MTry
+
+```{r}
+
+mtry <- tuneRF(trial_smote[-23],trial_smote$target, ntreeTry=100,stepFactor=1.5,improve=0.01, trace=TRUE, plot=TRUE)
+
+best.m <- mtry[mtry[, 2] == min(mtry[, 2]), 1]
+print(mtry)
+print(best.m)
+
+
+```
+
+
+
+
+
+```{r}
+
+best.m <- mtry[mtry[, 2] == min(mtry[, 2]), 1]
+print(mtry)
+print(best.m)
+
+
+```
+
+
+
+
+
+
+
+```{r}
+
+set.seed(777)
+
+rf <- randomForest(target_smot~.,data=trial_smote, mtry=best.m, importance=TRUE,ntree=100)
+print(rf)
+
+
+
+
+```
+
+
+
+
+
+
+```{r}
+
+importance(rf)
+
+
+```
+
+
+```{r}
+
+pred_trial<- predict(object = rf , newdata = trial_smote[,setdiff(names(trial_smote),"target_smot")],type = "response",norm.votes = TRUE)
+
+
+```
+
+
+
+
+
+```{r}
+
+cm_trial<- table("actual"= trial_smote$target_smot , "predicted" = pred_trial)
+
+cm_trial
+
+
+```
+
+
+
+
+
+
+```{r}
+
+accu_trial= sum(diag(cm_trial))/sum(cm_trial)
+
+accu_trial
+
+```
+
+
+
+#Prediction on validation data
+```{r}
+
+pred_val_02<- predict(rf, val_Data[,setdiff(names(val_Data), "target")],
+                     type = "response",
+                     norm.votes = TRUE)
+
+```
+
+
+```{r}
+
+cm_val_02<- table("accurate" = val_Data$target,  "predicted"= pred_val_02)
+cm_val_02
+
+```
+
+
+```{r}
+accu_val_02<- sum(diag(cm_val_02))/sum(cm_val_02)
+
+accu_val_02
+
+#percentage 93.8 - lesser than 95.7 acqired prior
+
+```
+
+
+
+
+```{r}
+
+pred_Test_02= predict(rf, test_Data,
+                    type="response", 
+                    norm.votes=TRUE)
+```
+
+
+```{r}
+
+
+
+final_data_smote<-cbind(ID,test_Data,pred_Test_02)
+
+
+View(final_data_smote)
+```
+
+```{r}
+
+submission_02<- final_data_smote[,names(final_data_smote) %in% c("ID","pred_Test_02")]
+
+
+View(submission_02)
+
+```
+
+
+```{r}
+
+library(xlsx)
+
+write.csv(submission_02, "submission_smote.csv")
+
+getwd()
+
+```
+
+
+#NOW Applying xgboost
+```{r}
+
+library(xgboost)
+
+str(trial_smote)
+
+```
+
+
+```{r}
+trial_matrix <- xgb.DMatrix(data = as.matrix(trial_smote[,!(names(trial_smote) %in% c("target_smot"))]), 
+                            label = as.matrix(trial_smote[, names(trial_smote) %in% "target_smot"]))
+
+
+
+train_matrix <- xgb.DMatrix(data = as.matrix(train_Data[, !(names(train_Data) %in% c("target"))]), 
+                            label = as.matrix(train_Data[, names(train_Data) %in% "target"]))
+
+
+
+dim(trial_matrix)
+
+#convertinginto matrix for testdata
+
+View(test_Data)
+
+test_matrix <- xgb.DMatrix(data = as.matrix(test_Data))
+
+
+dim(test_matrix)
+
+```
+
+
+```{r}
+xgb_model_basic <- xgboost(data = train_matrix, max.depth = 2, eta = 1, nthread = -1, nround = 300, objective = "binary:logistic", verbose = 1, early_stopping_rounds = 10)
+
+
+
+```
+
+
+
+```{r}
+
+
+
+basic_preds <- predict(xgb_model_basic, test_matrix)
+
+pred_basic <- ifelse(basic_preds > 0.05, 1, 0)
+
+```
+
+
+```{r}
+final_trial<- cbind(ID,test_Data,pred_basic)
+
+
+
+View(final_trial)
+
+submission_03<- final_trial[,names(final_trial) %in% c("ID","pred_basic")]
+
+
+View(submission_03)
+
+library(xlsx)
+
+write.csv(submission_03, "submission_trial.csv")
+
+getwd()
+
+
+
+```
+
+
+
+```{r}
+
+params_list <- list("objective" = "binary:logistic",
+              "eta" = 0.1,
+              "early_stopping_rounds" = 10,
+              "max_depth" = 6,
+              "gamma" = 0.5,
+              "colsample_bytree" = 0.6,
+              "subsample" = 0.65,
+              "eval_metric" = "auc",
+              "silent" = 1)
+
+
+xgb_model_with_params <- xgboost(data = train_matrix, params = params_list, nrounds = 500, early_stopping_rounds = 20)
+
+
+basic_params_preds <- predict(xgb_model_with_params, test_matrix)
+
+basic_params_preds_labels <- ifelse(basic_params_preds < 0.5, 0, 1)
+
+variable_importance_matrix <- xgb.importance(feature_names = colnames(train_matrix), model = xgb_model_with_params)
+
+xgb.plot.importance(variable_importance_matrix)
+
+
+```
+
+
+
+
+```{r}
+
+
+#Tuning an XGBoost Model with the caret package
+
+sampling_strategy <- trainControl(method = "repeatedcv", number = 5, repeats = 2, verboseIter = F, allowParallel = T)
+
+param_grid <- expand.grid(.nrounds = c(20,30),
+                          .max_depth = c(4, 6),
+                          .eta =c(0.1,0.3),
+                          .gamma = c(0.6, 0.5),
+                          .colsample_bytree = c(0.6, 0.4),
+                          .min_child_weight = 1,
+                          .subsample = c(0.6, 0.9))
+
+
+xgb_tuned_model <- train(x = train_Data[ , !(names(train_Data) %in% c("target"))], 
+                         y = train_Data[ ,names(train_Data) %in% c("target")], 
+                         method = "xgbTree",
+                         trControl = sampling_strategy,
+                         tuneGrid = param_grid)
+
+
+
+xgb_tuned_model$bestTune
+
+plot(xgb_tuned_model)
+
+
+
+
+
+
+
+```
+
+
+
+
+```{r}
+tuned_params_preds <- predict(xgb_tuned_model, test_data)
+
+
+
+pred_tune <- ifelse(basic_preds > 0.05, 1, 0)
+```
+
+
+
+```{r}
+final_param_tune<- cbind(ID,test_Data,pred_tune)
+
+
+
+View(final_param_tune)
+
+submission_04<- final_param_tune[,names(final_param_tune) %in% c("ID","pred_tune")]
+
+
+View(submission_04)
+
+library(xlsx)
+
+write.csv(submission_04, "submission_tune.csv")
+
+getwd()
+
+
+
+
+```
+
+
+
